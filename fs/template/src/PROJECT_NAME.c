@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "PROJECT_NAME.h"
+#include "bonus.h"
 
 /******************************************************************************
 * SECTION: 宏定义
@@ -28,7 +29,7 @@ static struct fuse_operations operations = {
 	.readdir = PROJECT_NAME_readdir,				 /* 填充dentrys */
 	.mknod = PROJECT_NAME_mknod,					 /* 创建文件，touch相关 */
 	.write = NULL,								  	 /* 写入文件 */
-	.read = NULL,								  	 /* 读文件 */
+	.read = PROJECT_NAME_read,                         /* 附加题一：未完成时返回 ENOSYS */
 	.utimens = PROJECT_NAME_utimens,				 /* 修改时间，忽略，避免touch报错 */
 	.truncate = NULL,						  		 /* 改变文件大小 */
 	.unlink = NULL,							  		 /* 删除文件 */
@@ -174,8 +175,8 @@ int PROJECT_NAME_write(const char* path, const char* buf, size_t size, off_t off
  */
 int PROJECT_NAME_read(const char* path, char* buf, size_t size, off_t offset,
 		       struct fuse_file_info* fi) {
-	/* 选做 */
-	return size;			   
+	/* 附加题一：完成普通文件读取，供 FUSE 和附加题复用。 */
+	return -ENOSYS;
 }
 
 /**
@@ -285,6 +286,14 @@ int main(int argc, char **argv)
 	if (fuse_opt_parse(&args, &PROJECT_NAME_options, option_spec, NULL) == -1)
 		return -1;
 	
+	/* 教师已接好附加题分发；普通路径仍调用上面的学生回调。 */
+	ret = bonus_register(&operations);
+	if (ret < 0) {
+		fprintf(stderr, "Cannot register bonus callbacks: %s\n", strerror(-ret));
+		fuse_opt_free_args(&args);
+		return 1;
+	}
+
 	ret = fuse_main(args.argc, args.argv, &operations, NULL);
 	fuse_opt_free_args(&args);
 	return ret;

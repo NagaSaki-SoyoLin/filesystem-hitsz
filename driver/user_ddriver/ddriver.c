@@ -125,40 +125,46 @@ int emulate_rotate(int fd, off_t start, off_t end) {
  * @return int 文件描述符
  */
 int ddriver_open(char *path) {
-    int fd, ret = 0;
-    char device_path[128] = {0};
-    char log_path[128] = {0};
-    
-    sprintf(device_path, "%s/" DEVICE_NAME, getpwuid(getuid())->pw_dir);
-    sprintf(log_path, "%s/" DEVICE_LOG, getpwuid(getuid())->pw_dir);
-    
-    if (strcmp(device_path, path) != 0) {
-        user_panic("wrong path [%s], should be [%s]", path, device_path);
-        return -1;
+    char default_path[4096];
+    char log_path[4096];
+    struct stat st;
+    if (!path || !*path) {
+        struct passwd *pw = getpwuid(getuid());
+        if (!pw) return -ENOENT;
+        int n = snprintf(default_path, sizeof(default_path), "%s/" DEVICE_NAME, pw->pw_dir);
+        if (n < 0 || (size_t)n >= sizeof(default_path)) return -ENAMETOOLONG;
+        path = default_path;
     }
-
-    if (access(device_path, F_OK) == 0) {
-        fd = open(device_path, O_RDWR);
+    int n = snprintf(log_path, sizeof(log_path), "%s.log", path);
+    if (n < 0 || (size_t)n >= sizeof(log_path)) return -ENAMETOOLONG;
+    int fd = open(path, O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
+    if (fd < 0) return -errno;
+    if (fstat(fd, &st) < 0) {
+        int error = errno;
+        close(fd);
+        return -error;
     }
-    else {
-        fd = open(device_path, O_CREAT | O_TRUNC | O_RDWR, 0644);
+    if (!S_ISREG(st.st_mode) || (st.st_size && st.st_size != CONFIG_DISK_SZ)) {
+        close(fd);
+        return -EINVAL;
     }
-    if (fd < 0) {
-        user_panic("can't open device: %d", fd);
-        return fd;
+    if (!st.st_size) {
+        int error = posix_fallocate(fd, 0, CONFIG_DISK_SZ);
+        if (error) { close(fd); return -error; }
     }
-    ret = posix_fallocate(fd, 0, CONFIG_DISK_SZ);
-    if (ret < 0) {
-        user_panic("low space");
-        return ret;
+    int log_fd = open(log_path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+    if (log_fd < 0) {
+        int error = errno;
+        close(fd);
+        return -error;
     }
-
-    debugf = fopen(log_path, "w+");
-    if (debugf == NULL) {
-        user_panic("can't init log: %s", log_path);
-        return -1;
+    debugf = fdopen(log_fd, "w");
+    if (!debugf) {
+        int error = errno;
+        close(log_fd);
+        close(fd);
+        return -error;
     }
-
     return fd;
 }
 /**
@@ -168,7 +174,10 @@ int ddriver_open(char *path) {
  * @return int 
  */
 int ddriver_close(int fd) {
-    return close(fd) && fclose(debugf);
+    int ret = close(fd) < 0 ? -errno : 0;
+    if (debugf && fclose(debugf) != 0 && !ret) ret = -errno;
+    debugf = NULL;
+    return ret;
 }
 /**
  * @brief 磁盘头SEEK
@@ -212,10 +221,15 @@ int ddriver_write(int fd, char *buf, size_t size){
         return res;
         
     RW_DELAY(disk, write);
-    write(fd, buf, size);
-
+    size_t done = 0;
+    while (done < size) {
+        ssize_t n = write(fd, buf + done, size - done);
+        if (n < 0) { if (errno == EINTR) continue; return -errno; }
+        if (!n) return -EIO;
+        done += (size_t)n;
+    }
     INC_WRITECNT(disk);
-    return CONFIG_BLOCK_SZ;
+    return (int)done;
 }
 /**
  * @brief 
@@ -231,10 +245,15 @@ int ddriver_read(int fd, char *buf, size_t size){
         return res;
 
     RW_DELAY(disk, read);
-    read(fd, buf, size);
-
+    size_t done = 0;
+    while (done < size) {
+        ssize_t n = read(fd, buf + done, size - done);
+        if (n < 0) { if (errno == EINTR) continue; return -errno; }
+        if (!n) return -EIO;
+        done += (size_t)n;
+    }
     INC_READCNT(disk);
-    return CONFIG_BLOCK_SZ;
+    return (int)done;
 }
 /**
  * @brief 

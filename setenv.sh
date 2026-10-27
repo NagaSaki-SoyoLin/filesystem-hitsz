@@ -60,7 +60,7 @@ function generate_skeleton() {
     mv $SRC_DIR/PROJECT_NAME.c $SRC_DIR/"$PROJECT_NAME".c
     mv $INC_DIR/PROJECT_NAME.h $INC_DIR/"$PROJECT_NAME".h
 
-    sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" $SRC_DIR/"$PROJECT_NAME".c
+    sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" "$SRC_DIR/$PROJECT_NAME.c" "$WORKSPACE_NAME"/bonus/src/*.c
     sed -i "s/PROJECT_NAME^^/${PROJECT_NAME^^}/g" $INC_DIR/"$PROJECT_NAME".h
     sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" $INC_DIR/"$PROJECT_NAME".h
     sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" $INC_DIR/types.h
@@ -180,10 +180,11 @@ function main() {
     build_workspace
 }
 
-if [[ $# -lt 1 ]]; then
-    read -r -p "请输入工作目录名称 ([工作]目录将被至于./fs目录下): " WORKSPACE_NAME 
-else 
-    WORKSPACE_NAME="$1"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ $# -lt 1 ]]; then
+        read -r -p "请输入工作目录名称 ([工作]目录将被至于./fs目录下): " WORKSPACE_NAME
+    else
+        WORKSPACE_NAME="$1"
+    fi
+    main
 fi
-
-main 

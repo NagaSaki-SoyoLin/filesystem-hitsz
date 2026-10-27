@@ -11,11 +11,18 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 find_package(FUSE REQUIRED)
-include_directories(${FUSE_INCLUDE_DIR} ./include)
+include_directories(${FUSE_INCLUDE_DIR} ./include ./bonus/include)
 aux_source_directory(./src DIR_SRCS)
-add_executable(PROJECT_NAME ${DIR_SRCS})
+add_executable(PROJECT_NAME ${DIR_SRCS}
+    bonus/src/bonus.c
+    bonus/src/path.c
+    bonus/src/checkpoint_support.c
+    bonus/src/vector_support.c
+    bonus/src/checkpointfs.c
+    bonus/src/vectorfs.c)
+target_compile_features(PROJECT_NAME PRIVATE c_std_11)
 message("FUSE_INCLUDE_DIR ${FUSE_INCLUDE_DIR}")
 message("FUSE_LIBRARIES ${FUSE_LIBRARIES}")
 message("DIR_SRCS ${DIR_SRCS}")
 message("!!!!!**CMAKE_GENERATOR** ${CMAKE_GENERATOR}")
-target_link_libraries(PROJECT_NAME ${FUSE_LIBRARIES} $ENV{HOME}/lib/libddriver.a)
+target_link_libraries(PROJECT_NAME ${FUSE_LIBRARIES} $ENV{HOME}/lib/libddriver.a m)

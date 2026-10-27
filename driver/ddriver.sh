@@ -65,6 +65,7 @@ function install() {
     DDRIVER_TYPE=$1
     echo "$DDRIVER_TYPE"
 
+    touch "$HOME"/.bashrc
     if [ ! -f "$HOME"/.bashrc_copy ]; then
         cp "$HOME"/.bashrc "$HOME"/.bashrc_copy
     fi
