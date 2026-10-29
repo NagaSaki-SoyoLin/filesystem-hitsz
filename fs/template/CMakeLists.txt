@@ -17,9 +17,7 @@ add_executable(PROJECT_NAME ${DIR_SRCS}
     bonus/src/bonus.c
     bonus/src/path.c
     bonus/src/checkpoint_support.c
-    bonus/src/vector_support.c
-    bonus/src/checkpointfs.c
-    bonus/src/vectorfs.c)
+    bonus/src/vector_support.c)
 target_compile_features(PROJECT_NAME PRIVATE c_std_11)
 message("FUSE_INCLUDE_DIR ${FUSE_INCLUDE_DIR}")
 message("FUSE_LIBRARIES ${FUSE_LIBRARIES}")

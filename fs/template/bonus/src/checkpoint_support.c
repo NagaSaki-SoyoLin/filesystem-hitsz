@@ -35,7 +35,7 @@ static int key_plain(unsigned char ch) {
     return ascii_alnum(ch) || ch == '-' || ch == '.';
 }
 
-/* IDs start with an ASCII letter or digit; subsequent dots are allowed. */
+/* 检查点名称以 ASCII 字母或数字开头，后续可包含点号。 */
 static int valid_id(const char *id) {
     size_t i, length;
     if (!id || !ascii_alnum((unsigned char)id[0])) return 0;
@@ -48,7 +48,7 @@ static int valid_id(const char *id) {
     return 1;
 }
 
-/* Only separators are literal underscores; every input underscore is %5F. */
+/* 只有路径分隔符编码为下划线，输入中的下划线一律编码为 %5F。 */
 static int make_key(const char *path, char *key, size_t capacity) {
     static const char hex[] = "0123456789ABCDEF";
     const char *last = strrchr(path, '/');
@@ -84,6 +84,19 @@ static int join_path(const char *parent, const char *name,
     return length < 0 || (size_t)length >= capacity ? -ENAMETOOLONG : 0;
 }
 
+/******************************************************************************
+* SECTION: 检查点路径工具实现
+*******************************************************************************/
+/**
+ * @brief 生成指定工作文件和检查点名称对应的内部存储路径
+ *
+ * @param file 工作文件的绝对路径，不能是根目录
+ * @param id 检查点名称，以 ASCII 字母或数字开头，后续可用字母、数字、-、_、.
+ * @param out 接收内部路径的缓冲区
+ * @param capacity 缓冲区容量，包含字符串结束符
+ * @return int 成功返回 0，路径、名称非法或容量不足时返回负错误码
+ * @note 只进行规范化、校验和编码，不查文件、不创建目录、不复制内容。
+ */
 int checkpointfs_path(const char *file, const char *id, char *out,
                       size_t capacity) {
     char normalized[CHECKPOINTFS_PATH_MAX];
@@ -92,7 +105,7 @@ int checkpointfs_path(const char *file, const char *id, char *out,
     if (!out || !capacity) return -EINVAL;
     out[0] = '\0';
     if (!valid_id(id)) return -EINVAL;
-    ret = bonus_normalize_path(file, normalized, sizeof(normalized));
+    ret = normalize_path(file, normalized, sizeof(normalized));
     if (ret < 0) return ret;
     if (!strcmp(normalized, "/")) return -EISDIR;
     ret = make_key(normalized, key, sizeof(key));
@@ -154,7 +167,7 @@ static int view_resolve(const char *path, char *storage, size_t size) {
     int ret;
     if (!storage || !size) return -EINVAL;
     storage[0] = '\0';
-    ret = bonus_normalize_path(path, normalized, sizeof(normalized));
+    ret = normalize_path(path, normalized, sizeof(normalized));
     if (ret < 0) return ret;
     if (!has_prefix(normalized, CHECKPOINTFS_VIEW_DIR)) return -ENOENT;
     key = normalized + strlen(CHECKPOINTFS_VIEW_DIR);
@@ -194,6 +207,17 @@ static int view_lookup(const char *path, char *storage, struct stat *st) {
     return 0;
 }
 
+/******************************************************************************
+* SECTION: 检查点只读视图实现
+*******************************************************************************/
+/**
+ * @brief 通过普通文件属性操作读取检查点只读视图的属性
+ *
+ * @param path /.checkpoints 下的完整路径
+ * @param st 接收文件属性的结构体
+ * @return int 成功返回 0，失败返回负错误码
+ * @note 目录权限显示为 0555，普通文件显示为 0444，不改变底层 inode。
+ */
 int checkpointfs_view_getattr(const char *path, struct stat *st) {
     char storage[CHECKPOINTFS_PATH_MAX];
     int ret;
@@ -205,6 +229,15 @@ int checkpointfs_view_getattr(const char *path, struct stat *st) {
     return 0;
 }
 
+/**
+ * @brief 通过普通文件读取操作读取检查点内容
+ *
+ * @param path 只读视图中文件的完整路径
+ * @param buf 接收文件内容的缓冲区
+ * @param size 最多读取的字节数
+ * @param offset 非负文件偏移
+ * @return int 成功返回读取字节数，失败返回负错误码
+ */
 int checkpointfs_view_read(const char *path, char *buf, size_t size,
                            off_t offset) {
     char storage[CHECKPOINTFS_PATH_MAX];
@@ -252,6 +285,15 @@ static int view_fill(void *opaque, const char *name, const struct stat *source,
     return listing->filler(listing->buf, name, &st, offset);
 }
 
+/**
+ * @brief 通过普通目录遍历操作列出检查点只读视图
+ *
+ * @param path 只读视图中目录的完整路径
+ * @param buf 传给 filler 的目录项缓冲区
+ * @param filler 填充目录项的 FUSE 回调
+ * @param offset 非负目录项偏移
+ * @return int 成功返回 0，失败返回负错误码
+ */
 int checkpointfs_view_readdir(const char *path, void *buf,
                               fuse_fill_dir_t filler, off_t offset) {
     char storage[CHECKPOINTFS_PATH_MAX];
@@ -274,7 +316,7 @@ int checkpointfs_view_readdir(const char *path, void *buf,
     return listing.error ? listing.error : ret;
 }
 
-/* Split exact tab fields, preserving empty fields instead of strtok skipping. */
+/* 按制表符精确拆分并保留空字段，避免 strtok 跳过空字段。 */
 static int execute_request(struct checkpointfs_session *session) {
     char *fields[4];
     char decoded[CHECKPOINTFS_PATH_MAX];
@@ -293,10 +335,29 @@ static int execute_request(struct checkpointfs_session *session) {
         (count != 4 || strcmp(fields[0], "restore"))) return -EINVAL;
     ret = bonus_percent_decode(fields[1], decoded, sizeof(decoded));
     if (ret < 0) return ret;
+    /* 固定内部根目录由教师准备；学生只创建各源文件的检查点目录。 */
+    struct stat storage;
+    ret = PROJECT_NAME_getattr(CHECKPOINTFS_STORAGE_DIR, &storage);
+    if (ret == -ENOENT) {
+        ret = PROJECT_NAME_mkdir(CHECKPOINTFS_STORAGE_DIR, 0755);
+    } else if (ret == 0 && !S_ISDIR(storage.st_mode)) {
+        ret = -ENOTDIR;
+    }
+    if (ret < 0) return ret;
     if (count == 3) return checkpointfs_create(decoded, fields[2]);
     return checkpointfs_restore(decoded, fields[2], fields[3]);
 }
 
+/******************************************************************************
+* SECTION: 检查点控制文件实现
+*******************************************************************************/
+/**
+ * @brief 打开只写控制文件并分配请求会话
+ *
+ * @param fi 文件信息；flags 须为 O_WRONLY，会话保存到 fh
+ * @return int 成功返回 0，失败返回负错误码
+ * @note 成功后须由 checkpointfs_control_release 释放会话。
+ */
 int checkpointfs_control_open(struct fuse_file_info *fi) {
     struct checkpointfs_session *session;
     if (!fi) return -EINVAL;
@@ -308,6 +369,16 @@ int checkpointfs_control_open(struct fuse_file_info *fi) {
     return 0;
 }
 
+/**
+ * @brief 连续接收控制请求，遇到末尾换行后执行一次
+ *
+ * @param buf 本次写入的请求片段
+ * @param size 本次片段的字节数
+ * @param offset 须等于会话此前累计接收的字节数
+ * @param fi 保存已打开请求会话的文件信息
+ * @return int 成功返回本次接收字节数，失败返回负错误码
+ * @note 尚未收到换行时只缓存；请求完成后不能再次提交。
+ */
 int checkpointfs_control_write(const char *buf, size_t size, off_t offset,
                                struct fuse_file_info *fi) {
     struct checkpointfs_session *session;
@@ -336,6 +407,13 @@ int checkpointfs_control_write(const char *buf, size_t size, off_t offset,
     return ret < 0 ? ret : (int)size;
 }
 
+/**
+ * @brief 释放控制请求会话并清空文件句柄
+ *
+ * @param fi 保存请求会话的文件信息
+ * @return int 成功返回 0，fi 为 NULL 时返回 -EINVAL
+ * @note 未完成的请求直接丢弃，不在关闭时执行。
+ */
 int checkpointfs_control_release(struct fuse_file_info *fi) {
     if (!fi) return -EINVAL;
     free((void *)(uintptr_t)fi->fh);

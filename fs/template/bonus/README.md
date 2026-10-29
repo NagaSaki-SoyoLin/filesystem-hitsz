@@ -1,108 +1,103 @@
-# 在自己的 newfs 上完成两个附加实验
+# Lab5 附加题二（CheckpointFS）与附加题三（VectorFS）开发速查
 
-本目录是**随基础模板提供的附加题代码，不是独立文件系统**。普通 `setenv.sh` 生成任务二工程时就会一并复制本目录，构建与 FUSE 路由已经连接。先完成必做题以及所选实验需要的普通文件功能，再直接编辑附加题 TODO；教师不会提供另一份磁盘、inode 或读写实现来绕过前面的实验。
+本目录随 `./setenv.sh` 生成任务二工程时一并复制到 `fs/newfs/bonus/`，CMake 与 `main()` 中的 `bonus_register(&operations)` 路由已预先接好。
 
-## 前置功能与学生工作
+- **你的普通文件系统代码**：位于 `src/newfs.c` 和 `include/newfs.h`。
+- **你的附加题填空代码（共 8 个 TODO）**：位于 `src/checkpointfs.c`（4 个函数）和 `src/vectorfs.c`（4 个函数），初始均返回 `-ENOSYS`。
+- **教师提供的支持代码（无需修改）**：位于 `bonus/include/`（头文件声明）、`bonus/src/`（路由、路径工具、控制会话、查询缓存、文档加载与向量计算）、`bonus/tools/`（命令行工具）和 `bonus/tests/`（自动验收脚本）。
 
-| 实验 | 复用自己的前置功能 | 本题实现 |
-|---|---|---|
-| CheckpointFS | 创建文件/目录、getattr、read/write、truncate、unlink、硬链接与链接计数 | 自己编写复制循环；保存恢复前内容；用自己的 unlink/link 操作切换工作路径 |
-| VectorFS | getattr、readdir、普通文件读取；用普通写入操作准备文档 | 标准 FUSE getattr/readdir/readlink，计算排名并将结果呈现为目录和软链接 |
+---
 
-CheckpointFS 所需的 `newfs_link` 必须是你自己的实现：新增目录项指向已有 inode，增加 nlink；unlink 减少 nlink，最后一个链接消失才释放内容。不是把硬链接当作另一份内容拷贝。若此前尚未实现硬链接，先在自己的 newfs 中完成；普通 rename 仍用于移动文件，但不是 CheckpointFS 的前提。VectorFS 不要求先完成 CheckpointFS 或硬链接功能。
+## 1. 动手前的普通文件系统自查清单
 
-## 接入已有工程
+CheckpointFS 和 VectorFS 都直接建立在你自己实现的 `newfs` 普通文件操作之上（**不要在 `newfs_*` 普通函数内部再次判断或转发 `/.checkpoint*` 或 `/.search` 路径**）：
 
-这里只说明生成工程中已有的连接，不需要另行安装或手动注册。按基础实验的正常流程，在仓库根目录运行一次 `./setenv.sh` 并填写工作目录与项目名称，即从 `fs/template` 生成学生工作目录。以下以工作目录和项目名均为 `newfs` 为例；已有该版模板生成的工程无需重复生成。
+| 选做题目 | 必须先在 `src/newfs.c` 中实现并挂载到 `operations` 表的钩子 |
+|---|---|
+| **CheckpointFS** | `mkdir`、`mknod`、`getattr`、`readdir`、`read`、`write`、`truncate`、`unlink`、**`link`（硬链接，需在 `include/newfs.h` 声明并挂到 `operations.link`）**，以及卸载重挂载持久化 |
+| **VectorFS** | `mkdir`、`mknod`、`getattr`、`readdir`、`read`、`write`、`truncate`、`unlink`、`rename`，以及卸载重挂载持久化（不需要先实现 `link` 或 CheckpointFS） |
 
-发放源码位于 `fs/template/bonus`，实际作业请编辑生成后的 `fs/newfs/bonus`。普通操作声明在生成工程的 `include/newfs.h`，附加接口和练习位置如下：
+> **关键提醒**：实现硬链接时，`newfs_link(source, target)` 应新增一个指向源 `inode` 的目录项并将 `nlink` 加 1（不复制数据块）；`newfs_unlink(path)` 删除目录项并将 `nlink` 减 1，**只有当 `nlink == 0` 时才真正回收 `inode` 和数据块**。
 
-```text
-fs/newfs/bonus/
-├── include/
-│   ├── bonus.h           # 公共辅助接口
-│   ├── checkpointfs.h    # 两个检查点入口
-│   └── vectorfs.h        # 三个标准 FUSE 回调及辅助接口
-├── src/
-│   ├── checkpointfs.c   # 两个学生 TODO
-│   ├── vectorfs.c       # 三个学生 TODO
-│   └── …（教师辅助源码）
-├── tools/
-├── tests/
-└── README.md
-```
+---
 
-生成工程的 CMake 已包含 `bonus/include` 和相关源码，主程序也已在 `fuse_main` 前连接虚拟路径分发，学生不需要补写 CMake include 或注册调用。保留并完成自己的 `newfs_*` 普通函数，**不要在这些函数内部再转发回 bonus**；附加题需要直接复用它们。分发器只包装传给 FUSE 的标准操作表，不引入新的存储后端接口。
+## 2. 附加题二：CheckpointFS 速查（`src/checkpointfs.c`）
 
-先完成所选题目的普通前置功能，再直接编辑上述五个 TODO，继续构建同一个工程。以下构建命令在仓库根目录执行：
+### 2.1 教师已提供的工具函数
+- `int checkpointfs_path(const char *file, const char *id, char *out, size_t capacity)`（声明于 `bonus/include/checkpointfs.h`）：
+  - 输入工作文件绝对路径 `file`（如 `"/models/model.bin"`）和检查点名 `id`（如 `"v0"`），在 `out` 中生成内部存储路径 `"/.checkpointfs-data/models__model.bin/v0"`。
+  - **注意**：它只做字符串校验与编码，不查磁盘、不建目录；第一个参数永远传工作文件路径 `source`。
+- `static void parent_path(const char *path, char *parent)`（已定义在 `src/checkpointfs.c` 顶部）：
+  - 提取 `path` 的父目录路径（如得到集合目录 `"/.checkpointfs-data/models__model.bin"`）。
+- 固定内部根目录 `CHECKPOINTFS_STORAGE_DIR`（`"/.checkpointfs-data"`）由教师控制层在调用你的函数前自动创建。
 
-```sh
-cmake -S fs/newfs -B fs/newfs/build -DCMAKE_BUILD_TYPE=Debug
-cmake --build fs/newfs/build
-```
+### 2.2 四个待实现函数的契约
+1. **`static int copy_file(const char *source, const char *target)`**
+   - 接收两个真实内部路径（假设 `target` 父目录已存在），确认 `source` 是已存在的普通文件，排他创建 `target`（不覆盖已有文件），将 `source` 的全部内容复制到 `target`（拥有独立 `inode` 和独立数据块，文件大小与内容完全一致，支持空文件、跨块文件及不足一块的尾部）。
+   - 可循环调用自己的 `newfs_read` / `newfs_write`（传入零初始化的 `struct fuse_file_info fi = {0};`），也可在内部按块复制。若创建 `target` 后复制中途失败，调用 `newfs_unlink(target)` 清理本次新建文件再返回负错误码。
+2. **`int checkpointfs_create(const char *source, const char *id)`**
+   - 用 `checkpointfs_path(source, id, ...)` 和 `parent_path(...)` 算出目标检查点路径与集合目录路径；
+   - 若集合目录尚不存在（`newfs_getattr` 返回 `-ENOENT`），调用 `newfs_mkdir` 创建它；
+   - 调用 `copy_file(source, target_path)` 完成保存。
+3. **`int checkpointfs_copy(const char *source, const char *source_id, const char *target_id)`**
+   - 用同一个工作文件路径 `source` 分别调用 `checkpointfs_path` 算出 `source_id` 和 `target_id` 的内部路径，再调用 `copy_file`。（注：这是供 `restore` 调用的公开 C 函数，命令行工具不新增 `copy` 子命令。）
+4. **`int checkpointfs_restore(const char *source, const char *hist_id, const char *new_id)`**
+   - 先用 `newfs_getattr` 确认工作文件 `source` 存在且为普通文件；
+   - 调用 `checkpointfs_copy(source, hist_id, new_id)` 将历史检查点独立复制为新检查点 `new_id`（即使当前工作文件已与 `hist_id` 共享 `inode` 也必须复制，不可跳过；若复制失败则直接返回错误，工作文件保持不变）；
+   - 复制成功后，依次调用 `newfs_unlink(source)` 和 `newfs_link(new_ckpt_path, source)`，让工作路径与新检查点共享同一个 `inode`。
 
-编译沿用你原来的 FUSE2/ddriver 配置。扩展只有五个学生入口：`checkpointfs_create/restore`，以及以下三个标准 FUSE2 回调。初始 TODO 明确返回 `-ENOSYS`。
+### 2.3 手动命令行工具用法
 
-## CheckpointFS：操作自己实现的文件
-
-`bonus/src/checkpointfs.c` 中的两个函数分别实现：
-
-- `create FILE ID`：检查源文件及新名称，用自己的 mkdir/mknod 在新 ID 的最终路径排他创建独立 inode；直接循环 read/write，处理 offset、短写、负返回值和零进展。失败只 unlink 本次新建的 checkpoint，并保留原始错误。不使用临时文件或发布步骤，不保证隐藏半复制内容或崩溃恢复。
-- `restore FILE BACKUP_ID TARGET_ID`：先检查工作文件、目标和未使用的备份 ID，再通过自己的 create 独立保存当前内容。备份失败停止；同 inode 时备份后直接结束，否则先 `newfs_unlink(work)` 再 `newfs_link(target,work)`。这是非原子切换，最终 link 失败返回错误并保留备份，工作路径可能不存在；不使用临时链接、rename 或回滚。
-
-模板已预先计算真实路径并注释用途：create 的 `work/checkpoint/directory`，restore 的 `work/backup/target`。create 的 directory 是 checkpoint 集合目录；路径准备不创建文件或链接，最终 checkpoint 仍需用自己的 mknod 排他创建，不能覆盖已有 ID。
-
-CheckpointFS 与 VectorFS 使用共享 `bonus.h` 中的 `CHECK(expr)`：do-while 宏只执行表达式一次，负返回值立即从当前函数返回。它适合无需清理即可返回的位置；新 checkpoint 创建后的读写错误应显式处理、清理后返回原始错误，不能跳过清理。Vector readdir 用 `CHECK(ret = vectorfs_parse_path(...))` 保留搜索根的 0 与查询路径的 1，文档和匹配数据仍须正确释放。合法参数仍到达 `-ENOSYS` TODO，非法路径或 ID 会在准备阶段返回相应错误。
-
-没有 `prepare` 计划对象、copy 函数或专用 replacement API。路径编码工具只计算名称；控制协议和只读展示不替你创建目录、拷贝文件或调整 inode 关系。
-
-恢复后工作路径与目标 checkpoint 共享 inode，因此继续写工作文件会改变该目标；恢复前备份是独立副本。这不是不可变快照。
-
-工具位于生成工程的 `bonus/tools/`。下面的工具命令和 VectorFS 示例均在 `fs/newfs` 工作目录内执行：
-
+在 `fs/newfs` 目录下（设 `$M` 为已挂载目录）：
 ```sh
 python3 bonus/tools/checkpointctl.py "$M" create /model.bin v1
-python3 bonus/tools/checkpointctl.py "$M" restore /model.bin before_restore v1
+python3 bonus/tools/checkpointctl.py "$M" restore /model.bin v1 resumed
 ls -li "$M/.checkpoints/__model.bin"
 ```
 
-`M` 必须是已挂载目录。文件参数为挂载内路径，不是宿主根路径。
+---
 
-## VectorFS：同样的 FUSE API，不同的数据来源
+## 3. 附加题三：VectorFS 速查（`src/vectorfs.c`）
 
-```c
-int vectorfs_getattr(const char *path, struct stat *st);
-int vectorfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-                     off_t offset, struct fuse_file_info *fi);
-int vectorfs_readlink(const char *path, char *buf, size_t size);
-```
+### 3.1 教师已提供的工具函数（声明于 `bonus/include/vectorfs.h`）
+- **路径解析**：`int kind = vectorfs_parse_path(path, &query, &rate, &rank);`
+  - 返回 `0` 表示搜索根 `"/.search"`（`query == NULL`）；返回 `1` 表示查询目录 `"/.search/<query>"`；返回 `2` 表示结果项 `"/.search/<query>/<rate>__<rank>"`；负值为错误码。
+  - `kind` 为 `1` 或 `2` 时，`query` 是动态分配的字符串，**在函数的所有后续返回分支中都必须调用 `free(query)`**（`free(NULL)` 同样安全）。
+  - `rank` 从 `0` 开始（第一名为 `0`，对应后缀 `__00`），**必须用 `kind` 区分目录与结果项，不能用 `rank == 0` 判断目录**。
+- **文档加载与向量计算**：
+  - `vectorfs_load_documents(&docs, &doc_count)`：加载 `/documents` 下所有普通文档（含子目录）及其 8 维向量，`docs[i].relative_path` 为不带 `/documents/` 前缀的相对路径（如 `"os/a.txt"`）；用完后必须调用 `vectorfs_documents_free(docs, doc_count)` 释放。
+  - `vectorfs_embed(query, strlen(query), query_vec)`：计算查询词的 8 维向量。
+  - `vectorfs_similarity(query_vec, docs[i].embedding)`：计算余弦相似度（`double`）。
+- **查询缓存与结果格式化**：
+  - `vectorfs_cache_get(query, &results, &count)`：按 `query` 查找缓存；未命中时自动调用你的 `vectorfs_search` 填充缓存。返回的 `results`（`const struct vectorfs_result *`）归缓存所有，**只读借用，切勿修改或 `free(results)`**。
+  - `vectorfs_result_name(&results[i], name, sizeof(name))`：生成 `"%.6f__%02zu"` 格式的目录项名（如 `"0.948683__01"`）。
+  - `vectorfs_result_target(&results[i], target, sizeof(target))`：生成 `"../../documents/<source>"` 格式的软链接目标路径。
 
-与前面的 `newfs_getattr/newfs_readdir` 参数完全对齐：输入是完整路径，输出是标准 `struct stat`、filler 目录项和 readlink 缓冲区。没有先由另一层转换成自定义参数列表的逻辑回调，也不要求填写 `vectorfs_match` 输出结构。
+### 3.2 四个待实现函数的契约
+1. **`int vectorfs_search(const char *query, struct vectorfs_result results[VECTORFS_TOP_K], size_t *count)`**
+   - 加载文档，若无文档则令 `*count = 0`、释放文档列表并返回 `0`；
+   - 计算 `query` 向量并与每个文档计算 `rate`，按 **`rate` 降序、同分 `source` 相对路径升序** 排序；
+   - 取前 `min(文档数, VECTORFS_TOP_K)`（最多 10）项填入教师预分配的 `results` 数组（复制 `source` 字符串、填 `rate`、令 `results[i].rank = i`），设置 `*count` 为实际填入项数，释放文档列表后返回 `0`（不要 `malloc`/`free` `results` 数组）。
+2. **`int vectorfs_getattr(const char *path, struct stat *st)`**
+   - 清零 `st`，解析路径：`kind == 0` 或 `1` 时填目录属性（`S_IFDIR | 0555`，`st_nlink = 2`）；
+   - `kind == 2` 时调用 `vectorfs_cache_get`，检查 `rank < count` 且 `results[rank]` 的名称/6 位小数分数与路径匹配（否则返回 `-ENOENT`），填软链接属性（`S_IFLNK | 0777`，`st_nlink = 1`，`st_size` 为 `vectorfs_result_target` 生成的目标路径字节长度）。
+3. **`int vectorfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)`**
+   - `offset < 0` 返回 `-EINVAL`；`kind == 2` 返回 `-ENOTDIR`；
+   - `kind == 0` 只列 `"."` 和 `".."`；`kind == 1` 先列 `"."`、`".."`，再从 `vectorfs_cache_get` 拿到结果，依次用 `vectorfs_result_name` 生成名字并从 `offset` 起调用 `filler(buf, name, NULL, pos + 1)`（注意 `pos` 是含 `.` 和 `..` 的目录项总序号；`filler` 返回非零时立即停止并返回 `0`）。
+4. **`int vectorfs_readlink(const char *path, char *buf, size_t size)`**
+   - `!buf || size == 0` 或 `kind != 2` 返回 `-EINVAL`；
+   - 从 `vectorfs_cache_get` 核对 `rank < count` 及结果名称匹配后，用 `vectorfs_result_target(&results[rank], ...)` 生成目标路径，最多复制 `size - 1` 字节到 `buf` 并补 `'\0'`，成功返回 `0`。
 
-普通 newfs 从磁盘 inode/目录项取得结果；这里根据 `/.search/<query>/` 动态计算结果。你自己执行查询嵌入、逐项比较与排序，可在自己文件内提取静态共用函数。教师提供的数学工具和只读文档列表不替你查询、排序或填写 FUSE 返回值。
+---
 
-- 查询目录：`S_IFDIR | 0555`。
-- 结果项：`S_IFLNK | 0777`，大小为链接目标字节数。
-- readdir：调用标准 filler 输出 `.`、`..` 及前 10 个结果；处理 offset 与 filler 已满。
-- readlink：将 `../../documents/<相对路径>` 写入调用者缓冲区，不返回文档内容。
+## 4. 一键编译与自动验收
 
-文档保存在自己的 `/documents` 普通目录中。每次需要结果都重新匹配，不要求缓存；同分按文档相对路径顺序排列。演示编码器不承诺自然语言语义质量。
+在 `fs/newfs` 工程目录下按选做范围执行（也可在仓库根目录执行 `bash fs/newfs/tests/test.sh ...`）：
 
 ```sh
-Q=$(python3 bonus/tools/searchpath.py "$M" 'file system')
-ls -l "$Q"
-# 使用上一步实际列出的结果名观察 readlink 和 cat。
+bash tests/test.sh checkpoint
+bash tests/test.sh vector
+bash tests/test.sh all
 ```
 
-## 验收
-
-在已有 `fs/newfs` 工程内：
-
-```sh
-python3 bonus/tests/run_bonus.py --binary build/newfs --suite checkpoint --device /tmp/lab5-checkpoint-new-device
-python3 bonus/tests/run_bonus.py --binary build/newfs --suite vector --device /tmp/lab5-vector-new-device
-```
-
-`--suite base` 检查普通读写/硬链接/覆盖重命名等能力（rename 并非 CheckpointFS 前提），`--suite all` 验收两题。测试实际挂载并重挂载你的二进制，拒绝已有设备和默认个人 ddriver，只清理自己创建的设备。需支持显式 `--device` 专用路径；不要运行会擦除个人磁盘的旧脚本。
-
-评分关注文件语义与标准回调行为，不要求额外的事务、故障注入、缓存或复杂路径协议。完整附加题参考答案保留在教师私有工程，不随公开模板发放；本目录也不提供普通 newfs 文件系统答案，普通能力由学生实现。
+脚本会自动编译工程，在 `tests/.lab5-test-*` 下创建独占临时磁盘完成挂载、测试与重挂载验证，并在结束后自动清理，不会影响你的个人默认 `ddriver` 磁盘。

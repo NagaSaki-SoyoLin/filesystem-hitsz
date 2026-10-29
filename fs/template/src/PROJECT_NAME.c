@@ -141,7 +141,6 @@ int PROJECT_NAME_mknod(const char* path, mode_t mode, dev_t dev) {
  * @return int 0成功，否则返回对应错误号
  */
 int PROJECT_NAME_utimens(const char* path, const struct timespec tv[2]) {
-	(void)path;
 	return 0;
 }
 /******************************************************************************

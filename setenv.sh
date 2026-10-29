@@ -47,7 +47,16 @@ function install_driver() {
 }
 
 function generate_CMakelists () {
-    read -r -p "请输入项目名称: " PROJECT_NAME 
+    while true; do
+        if ! read -r -p "请输入项目名称: " PROJECT_NAME; then
+            echo "错误：未读取到项目名称，终止生成。" >&2
+            exit 1
+        fi
+        if [[ -n "${PROJECT_NAME//[[:space:]]/}" ]]; then
+            break
+        fi
+        echo "项目名称不能为空，请重新输入。" >&2
+    done
     sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" "$WORKSPACE_NAME"/CMakeLists.txt
 }
 
@@ -60,7 +69,7 @@ function generate_skeleton() {
     mv $SRC_DIR/PROJECT_NAME.c $SRC_DIR/"$PROJECT_NAME".c
     mv $INC_DIR/PROJECT_NAME.h $INC_DIR/"$PROJECT_NAME".h
 
-    sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" "$SRC_DIR/$PROJECT_NAME.c" "$WORKSPACE_NAME"/bonus/src/*.c
+    sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" "$SRC_DIR"/*.c "$WORKSPACE_NAME"/bonus/src/*.c
     sed -i "s/PROJECT_NAME^^/${PROJECT_NAME^^}/g" $INC_DIR/"$PROJECT_NAME".h
     sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" $INC_DIR/"$PROJECT_NAME".h
     sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" $INC_DIR/types.h

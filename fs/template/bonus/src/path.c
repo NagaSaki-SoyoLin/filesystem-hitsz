@@ -3,7 +3,19 @@
 #include <string.h>
 
 
-int bonus_normalize_path(const char *path, char *out, size_t capacity) {
+/******************************************************************************
+* SECTION: 通用路径工具实现
+*******************************************************************************/
+/**
+ * @brief 规范化绝对路径，合并多余斜杠并处理 . 和 ..
+ *
+ * @param path 输入绝对路径
+ * @param out 接收规范化路径的缓冲区
+ * @param capacity 缓冲区容量，包含字符串结束符
+ * @return int 成功返回 0；非法路径或越过根目录返回 -EINVAL，容量不足返回 -ENAMETOOLONG
+ * @note 只处理字符串，不访问文件系统。
+ */
+int normalize_path(const char *path, char *out, size_t capacity) {
     size_t used = 1;
     if (!path || !out || capacity < 2 || path[0] != '/') return -EINVAL;
     out[0] = '/';
@@ -32,6 +44,12 @@ int bonus_normalize_path(const char *path, char *out, size_t capacity) {
     return 0;
 }
 
+/**
+ * @brief 将单个十六进制字符转换为数值
+ *
+ * @param c 待转换的字符
+ * @return int 合法字符返回 0 到 15，其他字符返回 -1
+ */
 static int hex_value(unsigned char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -39,6 +57,14 @@ static int hex_value(unsigned char c) {
     return -1;
 }
 
+/**
+ * @brief 解码字符串中的百分号编码
+ *
+ * @param source 输入编码字符串
+ * @param out 接收解码结果的缓冲区
+ * @param capacity 缓冲区容量，包含字符串结束符
+ * @return int 成功返回 0；非法编码（包括 %00）返回 -EINVAL，容量不足返回 -ENAMETOOLONG
+ */
 int bonus_percent_decode(const char *source, char *out, size_t capacity) {
     size_t used = 0;
     if (!source || !out || !capacity) return -EINVAL;

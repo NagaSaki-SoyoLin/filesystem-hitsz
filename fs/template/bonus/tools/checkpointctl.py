@@ -30,14 +30,14 @@ def file_key(file):
     return '_'.join(encode(p) for p in parts[:-1]) + '__' + encode(parts[-1])
 
 
-def request(mountpoint, operation, file, id, checkpoint_id=None):
+def request(mountpoint, operation, file, id, new_id=None):
     if operation not in ('create', 'restore'):
         raise ValueError('operation must be create or restore')
-    if (operation == 'restore') != (checkpoint_id is not None):
-        raise ValueError('restore requires a target checkpoint ID')
+    if (operation == 'restore') != (new_id is not None):
+        raise ValueError('restore requires HIST_CHECKPOINT and NEW_CHECKPOINT')
     fields = [operation, quote(normalize_file(file), safe=''), id]
-    if checkpoint_id is not None:
-        fields.append(checkpoint_id)
+    if new_id is not None:
+        fields.append(new_id)
     if any('\n' in field or '\t' in field or '\x00' in field for field in fields):
         raise ValueError('invalid protocol field')
     data = ('\t'.join(fields) + '\n').encode('utf-8')
@@ -60,11 +60,14 @@ def main():
     for operation in ('create', 'restore'):
         command = commands.add_parser(operation)
         command.add_argument('file', help='mount-relative absolute path, e.g. /model.bin')
-        command.add_argument('id', help='new checkpoint ID; restore saves current content here')
-        if operation == 'restore':
-            command.add_argument('checkpoint_id', help='existing checkpoint to restore')
+        if operation == 'create':
+            command.add_argument('id', help='new independent checkpoint ID')
+        else:
+            command.add_argument('hist_id', metavar='HIST_CHECKPOINT', help='existing historical checkpoint')
+            command.add_argument('new_id', metavar='NEW_CHECKPOINT', help='new copy to share with FILE; history stays unchanged')
     args = parser.parse_args()
-    request(args.mountpoint, args.operation, args.file, args.id, getattr(args, 'checkpoint_id', None))
+    first_id = args.id if args.operation == 'create' else args.hist_id
+    request(args.mountpoint, args.operation, args.file, first_id, getattr(args, 'new_id', None))
 
 
 if __name__ == '__main__':

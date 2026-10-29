@@ -7,8 +7,10 @@
 #include <string.h>
 #include <unistd.h>
 
-/* Only namespace wiring lives here; ordinary storage stays in the student's
- * existing newfs. No storage vtable, copy routine or replacement primitive. */
+/******************************************************************************
+* SECTION: FUSE 路由状态
+*******************************************************************************/
+/* 这里只分发命名空间；普通存储仍由学生实现，不提供复制或替换原语。 */
 static struct fuse_operations ordinary;
 enum route { BASE, CONTROL, VIEW, SEARCH, INTERNAL };
 #define PATH_CAPACITY 8192
@@ -36,7 +38,7 @@ static int writable(const char *path) {
 
 #define NORMALIZE(path, name) \
     char name[PATH_CAPACITY]; \
-    int normalized_##name = bonus_normalize_path(path, name, sizeof(name)); \
+    int normalized_##name = normalize_path(path, name, sizeof(name)); \
     if (normalized_##name < 0) return normalized_##name
 #define MUTABLE(path, name) \
     NORMALIZE(path, name); \
@@ -139,6 +141,7 @@ static int routed_read(const char *path, char *buf, size_t size, off_t offset,
 static int routed_write(const char *path, const char *buf, size_t size, off_t offset,
                          struct fuse_file_info *fi) {
     NORMALIZE(path, p);
+    vectorfs_cache_clear();
     if (!strcmp(p, "/.checkpoint/control")) return checkpointfs_control_write(buf, size, offset, fi);
     int ret = writable(p);
     if (ret < 0) return ret;
@@ -189,38 +192,46 @@ static int routed_access(const char *path, int mask) {
 
 static int routed_mkdir(const char *path, mode_t mode) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     return ordinary.mkdir ? ordinary.mkdir(p, mode) : -ENOSYS;
 }
 static int routed_mknod(const char *path, mode_t mode, dev_t dev) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     return ordinary.mknod ? ordinary.mknod(p, mode, dev) : -ENOSYS;
 }
 static int routed_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     int ret = ordinary.create(p, mode, fi);
     if (!ret) fi->direct_io = 1;
     return ret;
 }
 static int routed_truncate(const char *path, off_t size) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     return ordinary.truncate ? ordinary.truncate(p, size) : -ENOSYS;
 }
 static int routed_unlink(const char *path) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     return ordinary.unlink ? ordinary.unlink(p) : -ENOSYS;
 }
 static int routed_rmdir(const char *path) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     return ordinary.rmdir ? ordinary.rmdir(p) : -ENOSYS;
 }
 static int routed_link(const char *source, const char *target) {
     MUTABLE(source, from);
     MUTABLE(target, to);
+    vectorfs_cache_clear();
     return ordinary.link ? ordinary.link(from, to) : -ENOSYS;
 }
 static int routed_rename(const char *source, const char *target) {
     MUTABLE(source, from);
     MUTABLE(target, to);
+    vectorfs_cache_clear();
     return ordinary.rename ? ordinary.rename(from, to) : -ENOSYS;
 }
 static int routed_utimens(const char *path, const struct timespec times[2]) {
@@ -237,10 +248,12 @@ static int routed_chown(const char *path, uid_t uid, gid_t gid) {
 }
 static int routed_symlink(const char *target, const char *path) {
     MUTABLE(path, p);
+    vectorfs_cache_clear();
     return ordinary.symlink ? ordinary.symlink(target, p) : -ENOSYS;
 }
 
 static void *routed_init(struct fuse_conn_info *connection) {
+    vectorfs_cache_clear();
     void *data = ordinary.init ? ordinary.init(connection) : NULL;
     const char *reserved[] = {"/.checkpoint", "/.checkpoints", "/.search"};
     for (size_t i = 0; i < sizeof(reserved) / sizeof(reserved[0]); ++i) {
@@ -255,11 +268,27 @@ static void *routed_init(struct fuse_conn_info *connection) {
     return data;
 }
 
+static void routed_destroy(void *data) {
+    vectorfs_cache_clear();
+    if (ordinary.destroy) ordinary.destroy(data);
+}
+
+/******************************************************************************
+* SECTION: FUSE 路由接入实现
+*******************************************************************************/
+/**
+ * @brief 为已有 FUSE 操作表接入附加路径分发
+ *
+ * @param operations 已有操作表，原地安装包装回调；必须包含 getattr/readdir/read
+ * @return int 成功返回 0，参数不完整或重复注册返回 -EINVAL
+ * @note 由主程序在 fuse_main 前调用；原普通文件函数保持不变，供学生实现直接调用。
+ */
 int bonus_register(struct fuse_operations *operations) {
     if (!operations || !operations->getattr || !operations->readdir || !operations->read ||
         operations->getattr == routed_getattr) return -EINVAL;
     ordinary = *operations;
     operations->init = routed_init;
+    operations->destroy = routed_destroy;
     operations->getattr = routed_getattr;
     operations->readdir = routed_readdir;
     operations->open = routed_open;

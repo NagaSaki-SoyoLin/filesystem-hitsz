@@ -1,5 +1,35 @@
 #!/bin/bash
 
+# Resolve paths from this script, not the caller's working directory.
+TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 1
+PROJECT_DIR="$(dirname -- "$TEST_DIR")"
+
+if [[ $# -gt 0 ]]; then
+    case "$1" in
+        checkpoint|vector|all) SUITE="$1" ;;
+        *) echo "用法：bash tests/test.sh [checkpoint|vector|all]" >&2; exit 2 ;;
+    esac
+    if [[ $# -ne 1 ]]; then
+        echo "只需一个测试类型，不需要指定设备或二进制路径。" >&2
+        exit 2
+    fi
+    echo "[准备 1/2] 配置并编译当前文件系统"
+    if ! cmake -S "$PROJECT_DIR" -B "$PROJECT_DIR/build" -DCMAKE_BUILD_TYPE=Debug ||
+       ! cmake --build "$PROJECT_DIR/build" -j"$(nproc)"; then
+        echo "fail: 编译失败，尚未开始功能测试。" >&2
+        exit 1
+    fi
+    echo "pass: 编译完成"
+    echo "[准备 2/2] 启动 $SUITE 测评"
+    if ! command -v python3 >/dev/null; then
+        echo "fail: 缺少 python3，请在实验环境中安装。" >&2
+        exit 1
+    fi
+    exec python3 "$PROJECT_DIR/bonus/tests/run_bonus.py" --suite "$SUITE"
+fi
+
+cd "$TEST_DIR" || exit 1
+
 # cd ../../../tests/test_ddriver || exit
 # out=$(./compile_and_run.sh)
 # if ! echo "$out" | grep "Test Pass :)"; then
