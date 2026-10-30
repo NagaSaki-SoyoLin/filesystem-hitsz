@@ -1,0 +1,44 @@
+[
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/src/checkpointfs.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/src/checkpointfs.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/src/checkpointfs.c",
+  "output": "CMakeFiles/newfs.dir/src/checkpointfs.c.o"
+},
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/src/newfs.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/src/newfs.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/src/newfs.c",
+  "output": "CMakeFiles/newfs.dir/src/newfs.c.o"
+},
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/src/vectorfs.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/src/vectorfs.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/src/vectorfs.c",
+  "output": "CMakeFiles/newfs.dir/src/vectorfs.c.o"
+},
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/bonus/src/bonus.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/bonus.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/bonus.c",
+  "output": "CMakeFiles/newfs.dir/bonus/src/bonus.c.o"
+},
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/bonus/src/path.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/path.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/path.c",
+  "output": "CMakeFiles/newfs.dir/bonus/src/path.c.o"
+},
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/bonus/src/checkpoint_support.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/checkpoint_support.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/checkpoint_support.c",
+  "output": "CMakeFiles/newfs.dir/bonus/src/checkpoint_support.c.o"
+},
+{
+  "directory": "/home/sushengsi/user-land-filesystem/fs/newfs/build",
+  "command": "/usr/bin/cc  -I/home/sushengsi/user-land-filesystem/fs/newfs/./include -I/home/sushengsi/user-land-filesystem/fs/newfs/./bonus/include  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g -o CMakeFiles/newfs.dir/bonus/src/vector_support.c.o -c /home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/vector_support.c",
+  "file": "/home/sushengsi/user-land-filesystem/fs/newfs/bonus/src/vector_support.c",
+  "output": "CMakeFiles/newfs.dir/bonus/src/vector_support.c.o"
+}
+]
