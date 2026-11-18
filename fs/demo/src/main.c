@@ -9,6 +9,7 @@
 #include "pwd.h"
 #include "unistd.h"
 #include "string.h"
+#include <errno.h> // EIO
 
 #define DEMO_DEFAULT_PERM        0777
 
@@ -42,11 +43,14 @@ static void* demo_mount(struct fuse_conn_info * conn_info){
 
     printf("super.driver_fd: %d\n", super.driver_fd);
 
+    int io_sz = 0, disk_sz = 0;
+    ddriver_ioctl(super.driver_fd, IOC_REQ_DEVICE_IO_SZ, &io_sz); /* 512 */
+    ddriver_ioctl(super.driver_fd, IOC_REQ_DEVICE_SIZE, &disk_sz); /* 4194304 */
 
     /* 填充super信息 */
-    super.sz_io = /* TODO */;
-    super.sz_disk = /* TODO */;
-    super.sz_blks = /* TODO */; 
+    super.sz_io = /* TODO */ io_sz;
+    super.sz_disk = /* TODO */ disk_sz;
+    super.sz_blks = /* TODO */ 2 * io_sz; /* 1024 */
 
     return 0;
 }
@@ -62,17 +66,32 @@ static int demo_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off
 {
     // 此处任务一同学无需关注demo_readdir的传入参数，也不要使用到上述参数
 
-    char filename[128]; // 待填充的
+    char filename[128] = {0}; // 待填充的
 
     /* 根据超级块的信息，从第500逻辑块读取一个dentry，ls将只固定显示这个文件名 */
+    char block[512]; /* 一个 IO 块，ddriver_read 只能读 512B */
+    struct demo_dentry dentry;
 
     /* TODO: 计算磁盘偏移off，并根据磁盘偏移off调用ddriver_seek移动磁盘头到磁盘偏移off处 */
+    /* 注意用 sz_blks，不是 sz_io */
+    off_t off = (off_t)500 * super.sz_blks;
+    /* 偏移 512000 = 500*1024，本身就是 512 对齐的，直接 seek */
+    if (ddriver_seek(super.driver_fd, off, SEEK_SET) < 0)
+        return -EIO;
 
     /* TODO: 调用ddriver_read读出一个磁盘块到内存，512B */
+    /* 一次必须读满一个 IO 块：512B（不是 1024） */
+    if (ddriver_read(super.driver_fd, block, super.sz_io) < 0)
+        return -EIO;
 
     /* TODO: 使用memcpy拷贝上述512B的前sizeof(demo_dentry)字节构建一个demo_dentry结构 */
+    /* 前 sizeof(demo_dentry)=128 字节就是 dentry */
+    memcpy(&dentry, block, sizeof(struct demo_dentry));
 
     /* TODO: 填充filename */
+    /* 手动保证字符串有结尾，再拷贝出来 */
+    dentry.fname[sizeof(dentry.fname) - 1] = '\0';
+    memcpy(filename, dentry.fname, sizeof(filename) - 1);
 
     // 此处大家先不关注filler，已经帮同学写好，同学填充好filename即可
     return filler(buf, filename, NULL, 0);
@@ -84,7 +103,8 @@ static int demo_getattr(const char* path, struct stat *stbuf)
     if(strcmp(path, "/") == 0)
         stbuf->st_mode = DEMO_DEFAULT_PERM | S_IFDIR;            // 根目录是目录文件
     else
-        stbuf->st_mode = /* TODO: 显示为普通文件 */;            // 该文件显示为普通文件
+        stbuf->st_mode = /* TODO: 显示为普通文件 */
+            DEMO_DEFAULT_PERM | S_IFREG;            // 该文件显示为普通文件
     return 0;
 }
 
